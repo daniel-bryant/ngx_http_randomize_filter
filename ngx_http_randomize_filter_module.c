@@ -98,28 +98,28 @@ static ngx_int_t ngx_http_sub_filter_init(ngx_conf_t *cf);
 
 static ngx_command_t  ngx_http_sub_filter_commands[] = {
 
-    { ngx_string("sub_filter"),
+    { ngx_string("randomize_filter"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
       ngx_http_sub_filter,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
 
-    { ngx_string("sub_filter_types"),
+    { ngx_string("randomize_filter_types"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
       ngx_http_types_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_sub_loc_conf_t, types_keys),
       &ngx_http_html_default_types[0] },
 
-    { ngx_string("sub_filter_once"),
+    { ngx_string("randomize_filter_once"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_sub_loc_conf_t, once),
       NULL },
 
-    { ngx_string("sub_filter_last_modified"),
+    { ngx_string("randomize_filter_last_modified"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
@@ -145,7 +145,7 @@ static ngx_http_module_t  ngx_http_sub_filter_module_ctx = {
 };
 
 
-ngx_module_t  ngx_http_sub_filter_module = {
+ngx_module_t  ngx_http_randomize_filter_module = {
     NGX_MODULE_V1,
     &ngx_http_sub_filter_module_ctx,       /* module context */
     ngx_http_sub_filter_commands,          /* module directives */
@@ -175,7 +175,7 @@ ngx_http_sub_header_filter(ngx_http_request_t *r)
     ngx_http_sub_match_t     *matches;
     ngx_http_sub_loc_conf_t  *slcf;
 
-    slcf = ngx_http_get_module_loc_conf(r, ngx_http_sub_filter_module);
+    slcf = ngx_http_get_module_loc_conf(r, ngx_http_randomize_filter_module);
 
     if (slcf->pairs == NULL
         || r->headers_out.content_length_n == 0
@@ -246,7 +246,7 @@ ngx_http_sub_header_filter(ngx_http_request_t *r)
                                  ctx->matches->nelts);
     }
 
-    ngx_http_set_ctx(r, ctx, ngx_http_sub_filter_module);
+    ngx_http_set_ctx(r, ctx, ngx_http_randomize_filter_module);
 
     ctx->saved.data = ngx_pnalloc(r->pool, ctx->tables->max_match_len - 1);
     if (ctx->saved.data == NULL) {
@@ -290,7 +290,7 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_http_sub_match_t      *match;
     ngx_http_sub_loc_conf_t   *slcf;
 
-    ctx = ngx_http_get_module_ctx(r, ngx_http_sub_filter_module);
+    ctx = ngx_http_get_module_ctx(r, ngx_http_randomize_filter_module);
 
     if (ctx == NULL) {
         return ngx_http_next_body_filter(r, in);
@@ -420,7 +420,7 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
             ngx_memzero(b, sizeof(ngx_buf_t));
 
-            slcf = ngx_http_get_module_loc_conf(r, ngx_http_sub_filter_module);
+            slcf = ngx_http_get_module_loc_conf(r, ngx_http_randomize_filter_module);
 
             if (ctx->sub == NULL) {
                 ctx->sub = ngx_pcalloc(r->pool, sizeof(ngx_str_t)
@@ -600,7 +600,7 @@ ngx_http_sub_parse(ngx_http_request_t *r, ngx_http_sub_ctx_t *ctx)
     ngx_http_sub_tables_t    *tables;
     ngx_http_sub_loc_conf_t  *slcf;
 
-    slcf = ngx_http_get_module_loc_conf(r, ngx_http_sub_filter_module);
+    slcf = ngx_http_get_module_loc_conf(r, ngx_http_randomize_filter_module);
     tables = ctx->tables;
 
     offset = ctx->offset;
