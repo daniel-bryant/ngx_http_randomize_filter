@@ -435,11 +435,9 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
             if (sub->data == NULL) {
                 match = ctx->matches->elts;
 
-                if (ngx_http_complex_value(r, match[ctx->index].value, sub)
-                    != NGX_OK)
-                {
-                    return NGX_ERROR;
-                }
+                sub->data = match[ctx->index].match.data;
+                sub->len = match[ctx->index].match.len;
+
             }
 
             if (sub->len) {
