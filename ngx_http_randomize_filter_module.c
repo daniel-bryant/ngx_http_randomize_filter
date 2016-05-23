@@ -12,13 +12,11 @@
 
 typedef struct {
     ngx_http_complex_value_t   match;
-    ngx_http_complex_value_t   value;
 } ngx_http_sub_pair_t;
 
 
 typedef struct {
     ngx_str_t                  match;
-    ngx_http_complex_value_t  *value;
 } ngx_http_sub_match_t;
 
 
@@ -99,7 +97,7 @@ static ngx_int_t ngx_http_sub_filter_init(ngx_conf_t *cf);
 static ngx_command_t  ngx_http_sub_filter_commands[] = {
 
     { ngx_string("randomize_filter"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE2,
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_sub_filter,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -204,8 +202,6 @@ ngx_http_sub_header_filter(ngx_http_request_t *r)
 
         j = 0;
         for (i = 0; i < n; i++) {
-            matches[j].value = &pairs[i].value;
-
             if (pairs[i].match.lengths == NULL) {
                 matches[j].match = pairs[i].match.value;
                 j++;
@@ -784,16 +780,6 @@ ngx_http_sub_filter(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                    pair->match.value.len);
     }
 
-    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
-
-    ccv.cf = cf;
-    ccv.value = &value[2];
-    ccv.complex_value = &pair->value;
-
-    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
-        return NGX_CONF_ERROR;
-    }
-
     return NGX_CONF_OK;
 }
 
@@ -864,7 +850,6 @@ ngx_http_sub_merge_conf(ngx_conf_t *cf, void *parent, void *child)
 
         for (i = 0; i < n; i++) {
             matches[i].match = pairs[i].match.value;
-            matches[i].value = &pairs[i].value;
         }
 
         conf->matches = ngx_palloc(cf->pool, sizeof(ngx_array_t));
