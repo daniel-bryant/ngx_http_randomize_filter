@@ -32,6 +32,8 @@ typedef struct {
 typedef struct {
     ngx_uint_t                 dynamic; /* unsigned dynamic:1; */
 
+    ngx_http_complex_value_t  *salt;
+
     ngx_array_t               *pairs;
 
     ngx_http_sub_tables_t     *tables;
@@ -85,6 +87,8 @@ static ngx_int_t ngx_http_sub_parse(ngx_http_request_t *r,
 
 static char * ngx_http_sub_filter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
+static char * ngx_http_sub_filter_salt(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf);
 static void *ngx_http_sub_create_conf(ngx_conf_t *cf);
 static char *ngx_http_sub_merge_conf(ngx_conf_t *cf,
     void *parent, void *child);
@@ -99,6 +103,13 @@ static ngx_command_t  ngx_http_sub_filter_commands[] = {
     { ngx_string("randomize_filter"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_sub_filter,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      0,
+      NULL },
+
+    { ngx_string("randomize_filter_salt"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      ngx_http_sub_filter_salt,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
@@ -431,8 +442,27 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
             if (sub->data == NULL) {
                 match = ctx->matches->elts;
 
-                sub->data = match[ctx->index].match.data;
-                sub->len = match[ctx->index].match.len;
+                if (slcf->salt == NULL) {
+                    sub->len = match[ctx->index].match.len;
+                    sub->data = ngx_pstrdup(r->pool, &match[ctx->index].match);
+                } else {
+                    ngx_str_t salt;
+                    if (ngx_http_complex_value(r, slcf->salt, &salt) != NGX_OK) {
+                        return NGX_ERROR;
+                    }
+
+                    sub->len = salt.len + match[ctx->index].match.len;
+                    sub->data = ngx_pnalloc(r->pool, sub->len);
+
+                    if (sub->data == NULL) {
+                        return NGX_ERROR;
+                    }
+
+                    ngx_memcpy(sub->data, salt.data, salt.len);
+                    ngx_memcpy(sub->data + salt.len, match[ctx->index].match.data, match[ctx->index].match.len);
+                }
+
+                /* TODO hash the sub here */
 
             }
 
@@ -778,6 +808,45 @@ ngx_http_sub_filter(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     } else {
         ngx_strlow(pair->match.value.data, pair->match.value.data,
                    pair->match.value.len);
+    }
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_sub_filter_salt(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_sub_loc_conf_t *slcf = conf;
+
+    ngx_str_t                         *value;
+    ngx_http_compile_complex_value_t   ccv;
+
+    value = cf->args->elts;
+
+    if (value[1].len == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "empty hash salt");
+        return NGX_CONF_ERROR;
+    }
+
+    if (slcf->salt != NULL) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "hash salt is already defined");
+      return NGX_CONF_ERROR;
+    }
+
+    slcf->salt = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+    if(slcf->salt == NULL) {
+      return NGX_CONF_ERROR;
+    }
+
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+    ccv.cf = cf;
+    ccv.value = &value[1];
+    ccv.complex_value = slcf->salt;
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
     }
 
     return NGX_CONF_OK;
