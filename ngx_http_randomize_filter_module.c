@@ -442,25 +442,27 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
             if (sub->data == NULL) {
                 match = ctx->matches->elts;
 
+                ngx_str_t addr = r->connection->addr_text;
+                ngx_str_t mstr = match[ctx->index].match;
+                ngx_str_t salt;
+
                 if (slcf->salt == NULL) {
-                    sub->len = match[ctx->index].match.len;
-                    sub->data = ngx_pstrdup(r->pool, &match[ctx->index].match);
+                    salt = (ngx_str_t)ngx_string("");
                 } else {
-                    ngx_str_t salt;
                     if (ngx_http_complex_value(r, slcf->salt, &salt) != NGX_OK) {
                         return NGX_ERROR;
                     }
-
-                    sub->len = salt.len + match[ctx->index].match.len;
-                    sub->data = ngx_pnalloc(r->pool, sub->len);
-
-                    if (sub->data == NULL) {
-                        return NGX_ERROR;
-                    }
-
-                    ngx_memcpy(sub->data, salt.data, salt.len);
-                    ngx_memcpy(sub->data + salt.len, match[ctx->index].match.data, match[ctx->index].match.len);
                 }
+
+                sub->len = salt.len + addr.len + mstr.len;
+                sub->data = ngx_pnalloc(r->pool, sub->len);
+                if (sub->data == NULL) {
+                    return NGX_ERROR;
+                }
+
+                ngx_memcpy(sub->data, salt.data, salt.len);
+                ngx_memcpy(sub->data + salt.len, addr.data, addr.len);
+                ngx_memcpy(sub->data + salt.len + addr.len, mstr.data, mstr.len);
 
                 /* TODO hash the sub here */
 
