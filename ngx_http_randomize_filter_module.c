@@ -84,6 +84,7 @@ static ngx_int_t ngx_http_sub_output(ngx_http_request_t *r,
     ngx_http_sub_ctx_t *ctx);
 static ngx_int_t ngx_http_sub_parse(ngx_http_request_t *r,
     ngx_http_sub_ctx_t *ctx);
+static void ngx_http_sub_hash(ngx_str_t *ngx_str);
 
 static char * ngx_http_sub_filter(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
@@ -464,7 +465,7 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
                 ngx_memcpy(sub->data + salt.len, addr.data, addr.len);
                 ngx_memcpy(sub->data + salt.len + addr.len, mstr.data, mstr.len);
 
-                /* TODO hash the sub here */
+                ngx_http_sub_hash(sub);
 
             }
 
@@ -754,6 +755,30 @@ done:
     ctx->offset -= end;
 
     return rc;
+}
+
+
+static void
+ngx_http_sub_hash(ngx_str_t *sub)
+{
+    unsigned long hash = 5381;
+    u_char *str = sub->data;
+    int c;
+
+    /* available chars: A(65)-Z(90) and a(97)-z(122) */
+    /********* max  = 116 // 'z' offset by -6 */
+    static int min  = 65; // 'A'
+    static int diff = 51; // max - min
+
+    for(size_t i = 0; i < sub->len; ++str, ++i) {
+        c = *str;
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+        c = (hash%diff) + min; /* get number between 65 and 116 */
+        if (c > 90) { /* skipping 91-96 */
+            c += 6; /* adjust for offset */
+        }
+        *str = c;
+    }
 }
 
 
