@@ -10,6 +10,16 @@
 #include <ngx_http.h>
 
 
+typedef enum {
+    OUTSIDE_TAG,
+    TAG_NAME,
+    READY_FOR_ATTR,
+    ATTR_NAME,
+    READY_FOR_VAL,
+    ATTR_VALUE
+} state_t;
+
+
 typedef struct {
     ngx_http_complex_value_t   match;
 } ngx_http_sub_pair_t;
@@ -74,6 +84,8 @@ typedef struct {
 
     ngx_http_sub_tables_t     *tables;
     ngx_array_t               *matches;
+
+    state_t                    state;
 } ngx_http_sub_ctx_t;
 
 
@@ -83,6 +95,8 @@ static ngx_uint_t ngx_http_sub_cmp_index;
 static ngx_int_t ngx_http_sub_output(ngx_http_request_t *r,
     ngx_http_sub_ctx_t *ctx);
 static ngx_int_t ngx_http_sub_parse(ngx_http_request_t *r,
+    ngx_http_sub_ctx_t *ctx);
+static ngx_int_t ngx_http_sub_parse_html(ngx_http_request_t *r,
     ngx_http_sub_ctx_t *ctx);
 static void ngx_http_sub_hash(ngx_str_t *ngx_str);
 
@@ -291,6 +305,7 @@ static ngx_int_t
 ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
     ngx_int_t                  rc;
+    ngx_int_t                  html;
     ngx_buf_t                 *b;
     ngx_str_t                 *sub;
     ngx_chain_t               *cl;
@@ -334,6 +349,11 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http sub filter \"%V\"", &r->uri);
 
+    html = ngx_strncmp(r->headers_out.content_type.data, "text/html", ngx_strlen("text/html")) == 0;
+    if (html) {
+      ctx->state = OUTSIDE_TAG;
+    }
+
     while (ctx->in || ctx->buf) {
 
         if (ctx->buf == NULL) {
@@ -346,7 +366,11 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
         while (ctx->pos < ctx->buf->last) {
 
-            rc = ngx_http_sub_parse(r, ctx);
+            if (html) {
+              rc = ngx_http_sub_parse_html(r, ctx);
+            } else {
+              rc = ngx_http_sub_parse(r, ctx);
+            }
 
             ngx_log_debug4(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "parse: %i, looked: \"%V\" %p-%p",
@@ -753,6 +777,103 @@ done:
 
     ctx->pos += end;
     ctx->offset -= end;
+
+    return rc;
+}
+
+
+static ngx_int_t
+ngx_http_sub_parse_html(ngx_http_request_t *r, ngx_http_sub_ctx_t *ctx)
+{
+    u_char                   *pat, *pat_end, c;
+    size_t                    len;
+    ngx_str_t                *m;
+    ngx_int_t                 rc;
+    ngx_uint_t                i, j;
+    ngx_http_sub_match_t     *match;
+
+    char attr_name[7] = ""; /* space for 'classa\0' */
+    ctx->copy_start = ctx->pos;
+    match = ctx->matches->elts;
+    j = ctx->matches->nelts;
+
+    while (ctx->pos < ctx->buf->last) {
+      c = ngx_tolower(*ctx->pos);
+
+      switch(ctx->state) {
+        case OUTSIDE_TAG:
+          if (c == '<') {
+            ctx->state = TAG_NAME;
+          }
+          break;
+        case TAG_NAME:
+          if (c == ' ') {
+            ctx->state = READY_FOR_ATTR;
+          } else if (c == '>') {
+            ctx->state = OUTSIDE_TAG;
+          }
+          break;
+        case READY_FOR_ATTR:
+          if (c == ' ') {
+            ctx->state = ctx->state;
+          } else if (c == '>') {
+            ctx->state = OUTSIDE_TAG;
+          } else {
+            ngx_memset(attr_name, 0, 7);
+            attr_name[0] = c;
+            ctx->state = ATTR_NAME;
+          }
+          break;
+        case ATTR_NAME:
+          if (c == '=') {
+            ctx->state = READY_FOR_VAL;
+          } else {
+            len = ngx_strlen(attr_name);
+            if (len < 6) {
+              attr_name[len] = c;
+            }
+          }
+          break;
+        case READY_FOR_VAL:
+          if (c == '"') {
+            ctx->state = ATTR_VALUE;
+          }
+          break;
+        case ATTR_VALUE:
+          if (c == '"') {
+            ctx->state = READY_FOR_ATTR;
+          }
+          break;
+      }
+
+      if (ctx->state == ATTR_VALUE && (!ngx_strcmp("class", attr_name) || !ngx_strcmp("id", attr_name))) {
+        for (i = 0; i < j; ++i) {
+          m = &match[i].match;
+          pat = m->data;
+          if (*pat == c) {
+            u_char *pos = ctx->pos;
+            pat_end = m->data + m->len;
+            do {
+              pat++;
+              pos++;
+              if (pat == pat_end) {
+                ctx->copy_end = ctx->pos;
+                ctx->pos = pos;
+                ctx->index = i;
+                rc = NGX_OK; // to copy match
+                goto done;
+              }
+            } while (pos < ctx->buf->last && *pat == ngx_tolower(*pos));
+          }
+        }
+      }
+      ctx->pos++;
+    }
+
+    ctx->copy_end = ctx->pos;
+    rc = NGX_AGAIN; // to NOT copy match
+done:
+    ctx->saved.len = 0;
 
     return rc;
 }
